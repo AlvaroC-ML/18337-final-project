@@ -17,10 +17,29 @@ Random.seed!(42)
 # PART 1: THE NONLINEAR PROBLEM
 # ============================================================
 
+# n_input = 2
+# n_output = 2
+# 
+# function phi(x, y)
+#     r1 = y[1]^3 + x[1] * y[2] - 1.0
+#     r2 = y[2]^3 + x[2] * y[1] - 1.0
+#     return [r1, r2]
+# end
+
+n_input = 5
+n_output = 5
+
 function phi(x, y)
-    r1 = y[1]^3 + x[1] * y[2] - 1.0
-    r2 = y[2]^3 + x[2] * y[1] - 1.0
-    return [r1, r2]
+    # x: 5 parameters (input)
+    # y: 5 variables to solve (output)
+
+	r1 = y[1]^3 + x[1]*y[2] + 0.5*x[2]*y[3] - 1
+	r2 = y[2]^3 + x[2]*y[3] + 0.5*x[3]*y[4] - 1
+	r3 = y[3]^3 + x[3]*y[4] + 0.5*x[4]*y[5] - 1
+	r4 = y[4]^3 + x[4]*y[5] + 0.5*x[5]*y[1] - 1
+	r5 = y[5]^3 + x[5]*y[1] + 0.5*x[1]*y[2] - 1    
+
+    return [r1, r2, r3, r4, r5]
 end
 
 # ============================================================
@@ -43,8 +62,8 @@ Forward map: takes a parameter vector p and returns the solver solution.
 p will contain BOTH x and y0 (the warm start) packed together.
 """
 function forward_solver(p)
-	x = p[1:2]
-	y0 = p[3:4]
+	x = p[1:n_input]
+	y0 = p[n_input+1:end]
 
     residual!(u, params) = phi(params, u)
     prob = NonlinearProblem(residual!, Float64.(y0), Float64.(x))
@@ -53,8 +72,8 @@ function forward_solver(p)
 end
 
 function forward_solver_with_iters(p)
-	x = p[1:2]
-	y0 = p[3:4]
+	x = p[1:n_input]
+	y0 = p[n_input+1:end]
 
     residual!(u, params) = phi(params, u)
     prob = NonlinearProblem(residual!, Float64.(y0), Float64.(x))
@@ -71,7 +90,7 @@ Conditions: the implicit equation F(p, y) = 0 that defines the solution.
 At convergence, phi(x, y*) = 0.
 """
 function conditions(p, y, z)
-    x = p[1:2]
+    x = p[1:5]
     return phi(x, y)
 end
 
@@ -83,13 +102,11 @@ implicit_solver = ImplicitFunction(forward_solver, conditions)
 # PART 3: NEURAL NETWORK
 # ============================================================
 
-n_input = 2
-n_output = 2
-
+width = 256
 model = Chain(
-    Dense(n_input, 64, relu),
-    Dense(64, 64, relu),
-    Dense(64, n_output)
+    Dense(n_input, width, relu),
+    Dense(width, width, relu),
+    Dense(width, n_output)
 )
 
 # ============================================================
@@ -132,7 +149,7 @@ end
 # PART 5: TRAINING
 # ============================================================
 
-n_samples = 200
+n_samples = 1000
 X_data = [rand(n_input) .- 0.5 for _ in 1:n_samples]
 
 # Generate a separate validation set (unseen during training)
@@ -177,7 +194,7 @@ function train!(model, opt_state, X_data; n_epochs=500, batch_size=32)
     return model, opt_state
 end
 
-n_epochs=500
+n_epochs=1000
 batch_size=32
 
 model, opt_state = train!(
@@ -193,13 +210,6 @@ println("\n" * "="^50)
 println("EVALUATION")
 println("="^50)
 
-total_residual_norm = 0.0
-total_mse = 0.0
-total_loss = 0.0
-cold_iters_total = 0
-nn_iters_total = 0
-cold_start = [1.0, 1.0]
-
 for i in 1:5
     x = X_data[i]
     y_hat = model(x)
@@ -212,7 +222,15 @@ for i in 1:5
     println("  phi(x, y_hat)      = $(round.(phi(x, y_hat); digits=8))")
 end
 
+total_residual_norm = 0.0
+total_mse = 0.0
+total_loss = 0.0
+cold_iters_total = 0
+nn_iters_total = 0
+cold_start = ones(n_input)
+
 for i in 1:n_val
+	global total_residual_norm, total_mse, total_loss, cold_iters_total, nn_iters_total
     x = X_val[i]
     y_hat = model(x)
 
